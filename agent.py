@@ -46,8 +46,12 @@ def save_seen(seen: set):
 
 def load_jobs() -> list:
     if os.path.exists(config.JOBS_FILE):
-        with open(config.JOBS_FILE) as f:
-            return json.load(f)
+        try:
+            with open(config.JOBS_FILE, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            logger.warning("jobs_found.json corrupted — resetting to empty list")
+            return []
     return []
 
 

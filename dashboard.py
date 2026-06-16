@@ -58,8 +58,14 @@ PLATFORM_FLAGS = {
 def load_jobs():
     if not os.path.exists(JOBS_FILE):
         return []
-    with open(JOBS_FILE) as f:
-        return json.load(f)
+    try:
+        with open(JOBS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, ValueError):
+        st.warning("⚠️ jobs_found.json was corrupted and has been reset. Run a new scan.")
+        with open(JOBS_FILE, "w", encoding="utf-8") as f:
+            f.write("[]")
+        return []
 
 
 def load_log_tail(n=50):

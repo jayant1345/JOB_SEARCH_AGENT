@@ -373,12 +373,8 @@ def scrape_worknhire():
 
 def scrape_freelancer():
     jobs = []
-    search_terms = [
-        "python ai langchain",
-        "machine learning data science",
-        "rag chatbot openai",
-        "nlp python automation",
-    ]
+    # Single keywords only — multi-word phrases return 0 results from this API
+    search_terms = ["python", "langchain", "machine-learning", "nlp", "data-science"]
 
     for term in search_terms:
         url = (
@@ -445,55 +441,55 @@ def _parse_freelancer_html(html, term):
     return jobs
 
 
-# ── 5. Guru.com (RSS Feed) ──────────────────────────────────────
+# ── 5. Remotive.com (Free Public API — replaces Guru.com which is 403 blocked) ─
 
-def scrape_guru():
+_REMOTIVE_TECH_KW = [
+    "python", "machine learning", "data science", "nlp", "langchain",
+    "llm", "ai", "deep learning", "fastapi", "streamlit", "etl", "automation",
+]
+
+
+def scrape_remotive():
     jobs = []
     seen_ids = set()
-    search_terms = ["python", "machine-learning", "langchain", "data-science"]
+    search_terms = ["python", "machine learning", "data science", "nlp", "langchain"]
 
     for term in search_terms:
-        url = f"https://www.guru.com/jobs/rss/?q={requests.utils.quote(term)}&cat=4"
-        xml_text = _safe_get(url)
-        if not xml_text:
+        url = f"https://remotive.com/api/remote-jobs?category=software-dev&search={requests.utils.quote(term)}"
+        data = _safe_get(url, json_mode=True)
+        if not data:
             continue
 
-        try:
-            root = ET.fromstring(xml_text)
-            channel = root.find("channel")
-            if not channel:
+        for item in data.get("jobs", []):
+            job_id = f"rem_{item.get('id', abs(hash(item.get('url', ''))))}"
+            if job_id in seen_ids:
+                continue
+            seen_ids.add(job_id)
+
+            title = item.get("title", "")
+            tags  = [t.lower() for t in item.get("tags", [])]
+            title_lower = title.lower()
+
+            # Filter: must be AI/Python relevant
+            if not any(kw in title_lower or kw in " ".join(tags) for kw in _REMOTIVE_TECH_KW):
                 continue
 
-            for item in channel.findall("item"):
-                title = (item.findtext("title") or "").strip()
-                link  = (item.findtext("link")  or "").strip()
-                desc  = BeautifulSoup(item.findtext("description") or "", "lxml").get_text()[:300]
-                guid  = item.findtext("guid") or link
+            desc   = BeautifulSoup(item.get("description", "") or "", "lxml").get_text()[:300].strip()
+            salary = item.get("salary") or "N/A"
 
-                job_id = f"guru_{abs(hash(guid))}"
-                if job_id in seen_ids or not title:
-                    continue
-                seen_ids.add(job_id)
+            jobs.append({
+                "id": job_id,
+                "platform": "Remotive",
+                "title": title,
+                "description": desc,
+                "budget": salary,
+                "client_rating": None,
+                "link": item.get("url", ""),
+                "found_at": datetime.now().isoformat(),
+                "keyword_matched": term,
+            })
 
-                # Try to extract budget from description text
-                budget_match = re.search(r"\$[\d,]+(?:\s*[-–]\s*\$[\d,]+)?", desc)
-                budget = budget_match.group(0) if budget_match else "N/A"
-
-                jobs.append({
-                    "id": job_id,
-                    "platform": "Guru.com",
-                    "title": title,
-                    "description": desc.strip(),
-                    "budget": budget,
-                    "client_rating": None,
-                    "link": link,
-                    "found_at": datetime.now().isoformat(),
-                    "keyword_matched": term,
-                })
-        except Exception as e:
-            logger.debug(f"Guru RSS parse: {e}")
-
-    logger.info(f"Guru.com: {len(jobs)} jobs")
+    logger.info(f"Remotive: {len(jobs)} jobs")
     return jobs
 
 
@@ -562,117 +558,54 @@ def scrape_remoteok():
     return jobs
 
 
-# ── 7. PeoplePerHour ───────────────────────────────────────────
+# ── 7. We Work Remotely (RSS Feed) ────────────────────────────
 
-def scrape_peopleperhour():
+_WWR_KW = ["python", "data", "machine learning", "ai", "nlp", "langchain",
+           "ml", "deep learning", "analytics", "engineer", "scientist"]
+
+
+def scrape_weworkremotely():
     jobs = []
-    search_terms = ["python", "machine-learning", "langchain", "nlp"]
+    seen_ids = set()
+    url = "https://weworkremotely.com/remote-jobs.rss"
+    xml_text = _safe_get(url)
+    if not xml_text:
+        return []
 
-    for term in search_terms:
-        url = f"https://www.peopleperhour.com/freelance-jobs?q={requests.utils.quote(term)}&sort=latest"
-        html = _safe_get(url)
-        if not html:
-            continue
+    try:
+        root = ET.fromstring(xml_text)
+        for item in root.findall(".//item"):
+            title = (item.findtext("title") or "").strip()
+            link  = (item.findtext("link")  or "").strip()
+            desc  = BeautifulSoup(item.findtext("description") or "", "lxml").get_text()[:300].strip()
 
-        soup = BeautifulSoup(html, "lxml")
-        cards = (
-            soup.select("[data-test='job-tile']") or
-            soup.select(".JobSearchCard") or
-            soup.select("li.item") or
-            soup.find_all("div", class_=re.compile(r"job.?card|listing.?item|result.?item", re.I))
-        )
+            text = (title + " " + desc).lower()
+            if not any(kw in text for kw in _WWR_KW):
+                continue
 
-        for card in cards[:15]:
-            try:
-                title_el = (
-                    card.find("h2") or card.find("h3") or
-                    card.find(class_=re.compile(r"title|heading|name", re.I))
-                )
-                title = title_el.get_text(strip=True) if title_el else ""
-                if not title or len(title) < 5:
-                    continue
+            job_id = f"wwr_{abs(hash(link or title))}"
+            if job_id in seen_ids:
+                continue
+            seen_ids.add(job_id)
 
-                link = _job_link(card, "https://www.peopleperhour.com",
-                                 prefer_patterns=[r"/job/", r"/project/", r"\d{4,}"])
+            budget_m = re.search(r"\$[\d,]+(?:k)?(?:\s*[-–]\s*\$[\d,]+(?:k)?)?(?:/yr|/mo)?", desc, re.I)
+            budget   = budget_m.group(0) if budget_m else "N/A"
 
-                budget_el = card.find(class_=re.compile(r"budget|price|amount|fee|rate", re.I))
-                budget = budget_el.get_text(strip=True) if budget_el else "N/A"
+            jobs.append({
+                "id": job_id,
+                "platform": "We Work Remotely",
+                "title": title,
+                "description": desc,
+                "budget": budget,
+                "client_rating": None,
+                "link": link,
+                "found_at": datetime.now().isoformat(),
+                "keyword_matched": "rss-filter",
+            })
+    except Exception as e:
+        logger.debug(f"WWR RSS parse: {e}")
 
-                desc_el = card.find("p") or card.find(class_=re.compile(r"desc|detail|summary|body", re.I))
-                desc = desc_el.get_text(strip=True)[:300] if desc_el else ""
-
-                jobs.append({
-                    "id": f"pph_{abs(hash(link or title))}",
-                    "platform": "PeoplePerHour",
-                    "title": title,
-                    "description": desc,
-                    "budget": budget,
-                    "client_rating": None,
-                    "link": link,
-                    "found_at": datetime.now().isoformat(),
-                    "keyword_matched": term,
-                })
-            except Exception as e:
-                logger.debug(f"PeoplePerHour card: {e}")
-
-    logger.info(f"PeoplePerHour: {len(jobs)} jobs")
-    return jobs
-
-
-# ── 8. Hubstaff Talent ─────────────────────────────────────────
-
-def scrape_hubstaff():
-    jobs = []
-    search_terms = ["python", "machine learning", "data science", "langchain"]
-
-    for term in search_terms:
-        url = f"https://talent.hubstaff.com/search/jobs?term={requests.utils.quote(term)}"
-        html = _safe_get(url)
-        if not html:
-            continue
-
-        soup = BeautifulSoup(html, "lxml")
-        cards = (
-            soup.select(".JobCard") or
-            soup.select(".job-card") or
-            soup.select("[class*='job']") or
-            soup.find_all("div", class_=re.compile(r"job|listing|result", re.I))
-        )
-
-        for card in cards[:15]:
-            try:
-                title_el = (
-                    card.find("h2") or card.find("h3") or
-                    card.find(class_=re.compile(r"title|position|name", re.I))
-                )
-                title = title_el.get_text(strip=True) if title_el else ""
-                if not title or len(title) < 5:
-                    continue
-
-                link = _job_link(card, "https://talent.hubstaff.com",
-                                 prefer_patterns=[r"/jobs/", r"/listing/", r"\d{4,}"])
-
-                budget_el = card.find(class_=re.compile(r"rate|salary|budget|pay|compensation", re.I))
-                budget = budget_el.get_text(strip=True) if budget_el else "N/A"
-
-                desc_el = card.find("p") or card.find(class_=re.compile(r"desc|detail|summary|skills|about", re.I))
-                desc = desc_el.get_text(strip=True)[:300] if desc_el else ""
-
-                jobs.append({
-                    "id": f"hs_{abs(hash(link or title))}",
-                    "platform": "Hubstaff Talent",
-                    "title": title,
-                    "description": desc,
-                    "budget": budget,
-                    "client_rating": None,
-                    "link": link,
-                    "found_at": datetime.now().isoformat(),
-                    "keyword_matched": term,
-                })
-            except Exception as e:
-                logger.debug(f"Hubstaff card: {e}")
-
-    logger.info(f"Hubstaff Talent: {len(jobs)} jobs")
+    logger.info(f"We Work Remotely: {len(jobs)} jobs")
     return jobs
 
 
@@ -756,18 +689,18 @@ def _demo_jobs():
 #  MAIN ENTRY
 # ═══════════════════════════════════════════════════════════════
 
+# JS-rendered sites (React/MUI) — return 0 without Selenium, kept for future upgrade
 INDIAN_SCRAPERS = [
     ("Truelancer",  scrape_truelancer),
     ("Internshala", scrape_internshala),
-    ("Worknhire",   scrape_worknhire),
 ]
 
+# API/RSS sources — confirmed working
 INTERNATIONAL_SCRAPERS = [
-    ("Freelancer.com",  scrape_freelancer),
-    ("Guru.com",        scrape_guru),
-    ("RemoteOK",        scrape_remoteok),
-    ("PeoplePerHour",   scrape_peopleperhour),
-    ("Hubstaff Talent", scrape_hubstaff),
+    ("Freelancer.com",   scrape_freelancer),     # Public REST API
+    ("RemoteOK",         scrape_remoteok),        # Public JSON API
+    ("Remotive",         scrape_remotive),        # Free public API
+    ("We Work Remotely", scrape_weworkremotely),  # RSS feed
 ]
 
 

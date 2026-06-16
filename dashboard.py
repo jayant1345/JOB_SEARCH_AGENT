@@ -22,32 +22,28 @@ JOBS_FILE = "jobs_found.json"
 LOG_FILE  = "agent.log"
 
 # ── Platform config ───────────────────────────────────────────
-INDIAN_PLATFORMS = {"Truelancer", "Internshala", "Worknhire"}
-INTL_PLATFORMS   = {"Freelancer.com", "Guru.com", "RemoteOK", "PeoplePerHour", "Hubstaff Talent"}
+INDIAN_PLATFORMS = {"Truelancer", "Internshala"}
+INTL_PLATFORMS   = {"Freelancer.com", "RemoteOK", "Remotive", "We Work Remotely"}
 ALL_PLATFORMS    = sorted(INDIAN_PLATFORMS | INTL_PLATFORMS)
 
 PLATFORM_COLORS = {
-    # Indian
-    "Truelancer":   "#00c9a7",
-    "Internshala":  "#00b4d8",
-    "Worknhire":    "#0077b6",
-    # International
-    "Freelancer.com":  "#4f8bff",
-    "Guru.com":        "#a855f7",
-    "RemoteOK":        "#22c55e",
-    "PeoplePerHour":   "#f97316",
-    "Hubstaff Talent": "#eab308",
+    # Indian (JS-rendered, return 0 without Selenium — kept for future)
+    "Truelancer":       "#00c9a7",
+    "Internshala":      "#00b4d8",
+    # International — confirmed working
+    "Freelancer.com":   "#4f8bff",
+    "RemoteOK":         "#22c55e",
+    "Remotive":         "#a855f7",
+    "We Work Remotely": "#f97316",
 }
 
 PLATFORM_FLAGS = {
-    "Truelancer":      "🇮🇳",
-    "Internshala":     "🇮🇳",
-    "Worknhire":       "🇮🇳",
-    "Freelancer.com":  "🌐",
-    "Guru.com":        "🌐",
-    "RemoteOK":        "🌐",
-    "PeoplePerHour":   "🌐",
-    "Hubstaff Talent": "🌐",
+    "Truelancer":       "🇮🇳",
+    "Internshala":      "🇮🇳",
+    "Freelancer.com":   "🌐",
+    "RemoteOK":         "🌐",
+    "Remotive":         "🌐",
+    "We Work Remotely": "🌐",
 }
 
 

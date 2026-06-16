@@ -124,31 +124,23 @@ def run_scan():
         save_seen(seen)
         return
 
-    # 5. AI scoring
+    # 5. AI scoring — score ALL filtered jobs
     scored = ai_score_jobs(quality_filtered)
-    apply_jobs = [j for j in scored if j.get("ai_apply", False)]
-    logger.info(f"AI says APPLY to: {len(apply_jobs)}")
+    apply_count = sum(1 for j in scored if j.get("ai_apply", False))
+    logger.info(f"AI scored {len(scored)} jobs — {apply_count} recommended to apply")
 
-    # 6. Notify & save
-    for job in apply_jobs:
-        logger.info(f"  → [{job['platform']}] {job['title'][:60]} | Score {job.get('ai_score','?')}/10")
-        notify(
-            job,
-            whatsapp_number=config.WHATSAPP_NUMBER,
-            telegram_token=config.TELEGRAM_BOT_TOKEN,
-            telegram_chat=config.TELEGRAM_CHAT_ID,
-        )
-        time.sleep(2)   # Don't spam
+    for j in scored:
+        logger.info(f"  [{j.get('ai_score','?')}/10] {j['title'][:55]} | {j['platform']}")
 
-    # 7. Persist
-    all_jobs = apply_jobs + existing_jobs
-    # Keep last 500 jobs in file
+    # 6. Save ALL scored jobs to dashboard (no auto-notification)
+    # Notifications are sent manually from the dashboard per job.
+    all_jobs = scored + existing_jobs
     save_jobs(all_jobs[:500])
 
     seen.update(j["id"] for j in new_jobs)
     save_seen(seen)
 
-    logger.info(f"✅ Scan complete. {len(apply_jobs)} new alerts sent.")
+    logger.info(f"✅ Scan complete. {len(scored)} jobs saved to dashboard. Open http://localhost:8501 to review and send alerts.")
 
 
 # ─── ENTRY ───────────────────────────────────────────────────

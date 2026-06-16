@@ -12,11 +12,17 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+import config
+from notifier import notify
+
 st.set_page_config(
     page_title="JK Data Lab — Job Agent",
     page_icon="🤖",
     layout="wide",
 )
+
+if "notified" not in st.session_state:
+    st.session_state.notified = set()
 
 JOBS_FILE = "jobs_found.json"
 LOG_FILE  = "agent.log"
@@ -188,8 +194,8 @@ else:
         color    = PLATFORM_COLORS.get(platform, "#aaa")
         flag     = PLATFORM_FLAGS.get(platform, "🌐")
         badge_cls = "badge-indian" if platform in INDIAN_PLATFORMS else "badge-intl"
+        job_id   = job.get("id", "")
 
-        # Score colour
         score_color = "#00c9a7" if score >= 8 else "#ff9f43" if score >= 6 else "#aaa"
 
         st.markdown(f"""
@@ -207,11 +213,31 @@ else:
             </div>
             <p style="color:#aaa;margin:8px 0 4px 0;font-size:13px">{job.get('description','')[:200]}...</p>
             <p style="color:#888;font-size:12px">🤖 {job.get('ai_reason','')}</p>
-            <a href="{job.get('link','#')}" target="_blank" style="color:#4f8bff;font-size:13px">🔗 View Job →</a>
-            &nbsp;&nbsp;
             <span style="color:#555;font-size:11px">Found: {job.get('found_at','')[:16]}</span>
         </div>
         """, unsafe_allow_html=True)
+
+        col_link, col_btn, col_status = st.columns([2, 1, 1])
+        with col_link:
+            st.markdown(f"[🔗 View Job →]({job.get('link', '#')})")
+        with col_btn:
+            already_sent = job_id in st.session_state.notified
+            if not already_sent:
+                if st.button("📱 Send Alert", key=f"notify_{job_id}"):
+                    try:
+                        notify(
+                            job,
+                            whatsapp_number=config.WHATSAPP_NUMBER,
+                            telegram_token=config.TELEGRAM_BOT_TOKEN,
+                            telegram_chat=config.TELEGRAM_CHAT_ID,
+                        )
+                        st.session_state.notified.add(job_id)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Alert failed: {e}")
+        with col_status:
+            if job_id in st.session_state.notified:
+                st.success("✅ Sent")
 
 st.divider()
 

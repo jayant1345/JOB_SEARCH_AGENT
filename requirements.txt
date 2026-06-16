@@ -1,5 +1,8 @@
 # JK Data Lab — Job Search AI Agent requirements
 
+# Environment / config
+python-dotenv>=1.0.0
+
 # Agent scheduling
 schedule>=1.2.0
 

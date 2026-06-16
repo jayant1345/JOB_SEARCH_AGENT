@@ -3,42 +3,81 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-red)
 ![Claude AI](https://img.shields.io/badge/AI-Claude%20Sonnet-purple)
+![Portals](https://img.shields.io/badge/Portals-8%20platforms-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-> Autonomous job search agent that scrapes Truelancer & Freelancer.com every 2 hours, scores each listing with Claude AI, and sends instant Telegram or WhatsApp alerts — with a live Streamlit dashboard.
+> Autonomous job search agent that monitors **8 freelancing portals** (3 Indian + 5 International) every 2 hours, scores each listing with Claude AI, and sends instant Telegram or WhatsApp alerts — with a live Streamlit dashboard.
 
 ---
 
 ## What It Does
 
-- **Scrapes** Truelancer and Freelancer.com for Python / AI / ML / LangChain / Data Science jobs
+- **Scrapes 8 portals** — Truelancer, Internshala, Worknhire, Freelancer.com, Guru.com, RemoteOK, PeoplePerHour, Hubstaff Talent
 - **Filters** by keyword match and minimum client rating (4.0★)
 - **Scores** every job 1–10 with Claude Sonnet, auto-applying for scores ≥ 7
 - **Alerts** you in real time via Telegram Bot or WhatsApp Web (pywhatkit)
 - **Visualises** all matched jobs on a searchable, sortable Streamlit dashboard at `http://localhost:8501`
+- **Ban-safe** — polite crawling with random delays, request caps, and 429 detection
+
+---
+
+## Portals Covered
+
+### 🇮🇳 Indian Portals
+
+| Portal | Method | Best For |
+|--------|--------|---------|
+| [Truelancer](https://www.truelancer.com) | HTML scraping | INR projects, Indian clients |
+| [Internshala](https://internshala.com) | HTML scraping | Python/AI freelance & part-time |
+| [Worknhire](https://www.worknhire.com) | HTML scraping | Indian SME projects |
+
+### 🌐 International Portals
+
+| Portal | Method | Best For |
+|--------|--------|---------|
+| [Freelancer.com](https://www.freelancer.com) | Public REST API | Global USD projects |
+| [Guru.com](https://www.guru.com) | RSS Feed | Long-term contracts |
+| [RemoteOK](https://remoteok.com) | Public JSON API | Remote full-time & contract |
+| [PeoplePerHour](https://www.peopleperhour.com) | HTML scraping | UK/EU GBP projects |
+| [Hubstaff Talent](https://talent.hubstaff.com) | HTML scraping | Hourly remote work |
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────┐     every 2 hrs      ┌──────────────────┐
-│  agent.py    │ ──── run_scan() ────► │  scraper.py      │
-│  (scheduler) │                       │  Truelancer +    │
-└──────┬───────┘                       │  Freelancer.com  │
-       │ raw_jobs                      └────────┬─────────┘
-       ▼                                        │ job list
-┌──────────────┐   scored_jobs    ┌─────────────▼────────┐
-│ ai_filter.py │ ◄──────────────  │  keyword & client    │
-│ Claude API   │                  │  quality filters      │
-└──────┬───────┘                  └──────────────────────┘
-       │ apply=True
-       ▼
-┌──────────────┐    jobs_found.json
-│ notifier.py  │ ──────────────────► dashboard.py (Streamlit)
-│ Telegram /   │
-│ WhatsApp     │
-└──────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                     agent.py (scheduler)                 │
+│              runs run_scan() every 2 hours               │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│                    scraper.py                            │
+│                                                          │
+│  🇮🇳 INDIAN                   🌐 INTERNATIONAL            │
+│  ├─ Truelancer  (HTML)       ├─ Freelancer.com (API)    │
+│  ├─ Internshala (HTML)       ├─ Guru.com      (RSS)     │
+│  └─ Worknhire   (HTML)       ├─ RemoteOK      (JSON)    │
+│                              ├─ PeoplePerHour (HTML)    │
+│                              └─ Hubstaff Talent(HTML)   │
+└──────────────────────┬───────────────────────────────────┘
+                       │ raw_jobs (all platforms)
+                       ▼
+            keyword filter → client quality filter
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│              ai_filter.py — Claude Sonnet                │
+│         scores each job 1–10, apply = score ≥ 7         │
+└──────────────────────┬───────────────────────────────────┘
+                       │ apply=True jobs
+                       ▼
+┌─────────────────┐            ┌─────────────────────────┐
+│  notifier.py    │            │  dashboard.py           │
+│  Telegram Bot   │            │  Streamlit UI           │
+│  WhatsApp Web   │            │  localhost:8501         │
+└─────────────────┘            └─────────────────────────┘
 ```
 
 ---
@@ -48,12 +87,14 @@
 ### 1. Clone & install
 
 ```bash
-git clone <repo-url>
-cd Job_search_agent
+git clone https://github.com/kinjal-jayswal/JOB_SEARCH_AGENT.git
+cd JOB_SEARCH_AGENT
 
 python -m venv venv
+
 # Windows
 .\venv\Scripts\Activate.ps1
+
 # macOS / Linux
 source venv/bin/activate
 
@@ -62,7 +103,7 @@ pip install -r requirements.txt
 
 ### 2. Configure
 
-Edit [config.py](config.py):
+Edit [config.py](config.py) before first run:
 
 ```python
 TELEGRAM_BOT_TOKEN = "1234567890:ABC..."   # from @BotFather
@@ -77,18 +118,18 @@ WHATSAPP_NUMBER    = "+91XXXXXXXXXX"       # your number with country code
 bash start.sh
 ```
 
-**Windows (separate terminals):**
+**Windows (two terminals):**
 ```powershell
-# Terminal 1 — background agent
+# Terminal 1 — background agent (scans every 2 hours)
 python agent.py
 
-# Terminal 2 — dashboard
+# Terminal 2 — live dashboard
 streamlit run dashboard.py
 ```
 
 Dashboard opens at **http://localhost:8501**
 
-Stop everything:
+**Stop everything:**
 ```bash
 bash stop.sh
 ```
@@ -99,8 +140,8 @@ bash stop.sh
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `SCAN_INTERVAL_MINUTES` | `120` | How often to scrape (minutes) |
-| `MIN_CLIENT_RATING` | `4.0` | Minimum Truelancer client rating |
+| `SCAN_INTERVAL_MINUTES` | `120` | How often to scrape all 8 portals (minutes) |
+| `MIN_CLIENT_RATING` | `4.0` | Minimum Truelancer / Worknhire client rating |
 | `ZERO_RATING_BUDGET_LIMIT` | `5000` | Skip unrated clients above this budget (INR) |
 | `KEYWORDS` | `python, ai, ml, ...` | Any match triggers candidate status |
 | `TELEGRAM_BOT_TOKEN` | `""` | Create via @BotFather on Telegram |
@@ -112,12 +153,12 @@ bash stop.sh
 ## Project Structure
 
 ```
-Job_search_agent/
+JOB_SEARCH_AGENT/
 ├── agent.py          # Main scheduler — runs scan loop every 2 hours
-├── scraper.py        # Scrapes Truelancer & Freelancer.com (API + HTML)
+├── scraper.py        # 8-portal scraper (Indian + International)
 ├── ai_filter.py      # Claude Sonnet scores each job 1–10
 ├── notifier.py       # Sends Telegram Bot / WhatsApp Web alerts
-├── dashboard.py      # Streamlit UI — view, filter, and sort matched jobs
+├── dashboard.py      # Streamlit UI — filter by region, portal, score
 ├── config.py         # All settings (edit this before first run)
 ├── start.sh          # Launches agent + dashboard in background
 ├── stop.sh           # Kills both processes
@@ -133,19 +174,36 @@ Job_search_agent/
 
 | Package | Purpose |
 |---------|---------|
-| `schedule` | Cron-style job scheduling for the scan loop |
-| `requests` | HTTP calls to Freelancer API and Telegram Bot API |
-| `beautifulsoup4` | HTML parsing of Truelancer and Freelancer pages |
+| `schedule` | Cron-style scheduling for the scan loop |
+| `requests` | HTTP calls to APIs and web pages |
+| `beautifulsoup4` | HTML parsing for all scraping portals |
 | `lxml` | Fast HTML parser used by BeautifulSoup |
 | `streamlit` | Web dashboard UI |
 | `pandas` | DataFrame for the dashboard table view |
-| `pywhatkit` | WhatsApp Web automation for message delivery |
+| `pywhatkit` | WhatsApp Web automation for alerts |
+
+---
+
+## Ban-Safety & Polite Crawling
+
+The agent is designed to be a **respectful, low-volume reader** — not a scraper bot:
+
+| Protection | Detail |
+|------------|--------|
+| **Random delays** | 3–6 second pause between every request — mimics human browsing |
+| **Request cap** | Max 8 requests per portal per scan — hard ceiling enforced in code |
+| **429 detection** | If a site returns "Too Many Requests", that portal is silently skipped for the current scan |
+| **Rotating User-Agents** | 4 real browser signatures, randomly chosen per request |
+| **2-hour scan interval** | Never hammers any site — long gap between scans |
+| **Public pages only** | No login, no session tokens, no form submissions |
+
+> All scraped URLs are **public job listing pages** — the same pages any browser user visits. The agent reads them at a slower rate than a human would.
 
 ---
 
 ## Setting Up Telegram (Recommended)
 
-Telegram works headlessly — no browser required, ideal for servers.
+Telegram works headlessly — no browser required, ideal for background/server use.
 
 1. Open Telegram → search **@BotFather** → send `/newbot`
 2. Copy the token → paste into `TELEGRAM_BOT_TOKEN` in `config.py`
@@ -157,11 +215,11 @@ Telegram works headlessly — no browser required, ideal for servers.
 
 ## WhatsApp Alerts (Optional)
 
-WhatsApp via `pywhatkit` requires Chrome and an active WhatsApp Web session:
+Requires Chrome open with an active WhatsApp Web session:
 
 1. Open Chrome → go to [web.whatsapp.com](https://web.whatsapp.com) → scan QR
 2. Keep Chrome open while the agent runs
-3. Your number `+91 9157938887` is already set in `config.py`
+3. Your number is already set in `config.py`
 
 > Telegram is more reliable for background/headless use.
 

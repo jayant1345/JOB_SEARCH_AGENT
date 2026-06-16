@@ -383,7 +383,14 @@ def scrape_freelancer():
             "&job_details=true&limit=20&sort_field=submitdate&sort_order=desc"
         )
         data = _safe_get(url, json_mode=True)
+
+        # Check API-level errors (HTTP 200 but status != success)
+        if data and data.get("status") != "success":
+            logger.warning(f"Freelancer API error for '{term}': {str(data)[:120]}")
+            data = None
+
         if not data:
+            logger.debug(f"Freelancer API failed for '{term}', trying HTML fallback")
             html = _safe_get(f"https://www.freelancer.com/jobs/?keyword={requests.utils.quote(term)}")
             if html:
                 jobs.extend(_parse_freelancer_html(html, term))
@@ -391,6 +398,7 @@ def scrape_freelancer():
 
         try:
             projects = data.get("result", {}).get("projects", [])
+            logger.debug(f"Freelancer API '{term}': {len(projects)} projects")
             for p in projects:
                 budget = p.get("budget", {})
                 budget_str = f"${budget.get('minimum', 0)}-${budget.get('maximum', 0)}"

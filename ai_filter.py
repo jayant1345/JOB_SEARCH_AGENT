@@ -14,20 +14,27 @@ logger = logging.getLogger("JobAgent")
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
-SYSTEM_PROMPT = """You are a job relevance scorer for JK Data Lab, an AI & Data Science consultancy.
+SYSTEM_PROMPT = """You are a job relevance scorer for JK Data Lab, a Python/AI/ML freelancing consultancy.
 
-JK Data Lab services:
-- Multi-Agent AI Systems (LangChain, OpenAI, Python)
-- RAG & Document Intelligence (FAISS, Streamlit)
-- NLP & Text Analytics (BERT, HuggingFace, scikit-learn)
-- BI & Dashboards (Streamlit, Plotly, SQL, FastAPI)
-- Predictive Analytics & ML
-- Python Automation & ETL
+Skills we have (score HIGH 7-10 only for these):
+- Python scripting, automation, ETL pipelines
+- AI agent systems: LangChain, LangGraph, OpenAI, Claude API
+- RAG / document intelligence: FAISS, vector DBs
+- NLP & text analytics: HuggingFace, BERT, spaCy
+- ML models: scikit-learn, TensorFlow, PyTorch
+- Dashboards & APIs: Streamlit, FastAPI, Plotly
+- Data science / analytics with Python
 
-Rate each job 1-10 for relevance. Score 7+ means "apply".
-IMPORTANT: Score any non-technical job (sales, bidding, HR, admin, data entry) as 1-2.
-Return ONLY valid JSON, no markdown, no explanation.
-Format: [{"id":"...","score":8,"reason":"short reason","apply":true}, ...]"""
+Score LOW (1-3) for ALL of these — even if "engineer" or "agent" appears in the title:
+- Network engineer, solutions engineer, sales engineer, DevOps engineer
+- Web developer (PHP, Next.js, Node.js, Framer, WordPress)
+- UI/UX designer, graphic designer, content creator
+- Sales, marketing, HR, admin, account manager, finance
+- SAP, CRM, ERP, billing consultants
+- Any non-Python role
+
+Return ONLY a valid JSON array, no markdown, no extra text.
+Format: [{"id":"...","score":5,"reason":"one sentence","apply":false}, ...]"""
 
 _TECH_KEYWORDS = [
     "python", "langchain", "machine learning", "deep learning",

@@ -80,10 +80,75 @@ def _safe_get(url, timeout=20, json_mode=False, delay=True, portal=""):
             logger.warning(f"Rate-limited (429) by {url[:50]} — skipping portal for this scan")
             return None
         r.raise_for_status()
-        return r.json() if json_mode else r.text
+        if json_mode:
+            return r.json()
+        # Force UTF-8 so ₹ / £ / € are stored correctly
+        r.encoding = "utf-8"
+        return r.text
     except Exception as e:
         logger.warning(f"GET {url[:70]}... → {e}")
         return None
+
+
+def _job_link(card, base_url: str, prefer_patterns: list[str] = None) -> str:
+    """
+    Extract a direct job-listing link from a card element.
+
+    Strategy:
+      1. Look for an <a> whose href matches known job-URL patterns (has a digit,
+         or contains /post/ /project/ /job/ /detail/).
+      2. Fall back to the first <a> in the title element (h2/h3/h4).
+      3. Last resort: first <a href> in the card.
+
+    Category/tag links (e.g. /freelance-jobs/python-ai-agent) are explicitly
+    excluded because they produce 404s when clicked.
+    """
+    job_patterns = prefer_patterns or [
+        r"/post/", r"/project", r"/job/", r"/detail/", r"/listing/",
+        r"/work/", r"/gig/", r"\d{4,}",   # any URL with a 4+ digit ID
+    ]
+    # Exclude known category/tag URL shapes
+    category_patterns = [
+        r"^/freelance-jobs/[a-z-]+$",
+        r"^/jobs/[a-z-]+$",
+        r"^/freelance-[a-z-]+-jobs/?$",
+    ]
+
+    all_links = card.find_all("a", href=True)
+
+    # 1. Prefer links matching job patterns and not matching category patterns
+    for a in all_links:
+        href = a["href"]
+        is_job = any(re.search(p, href) for p in job_patterns)
+        is_cat = any(re.match(p, href) for p in category_patterns)
+        if is_job and not is_cat:
+            return _make_absolute(href, base_url)
+
+    # 2. Link from inside the heading element
+    for tag in ("h2", "h3", "h4"):
+        heading = card.find(tag)
+        if heading:
+            a = heading.find("a", href=True)
+            if a:
+                href = a["href"]
+                is_cat = any(re.match(p, href) for p in category_patterns)
+                if not is_cat:
+                    return _make_absolute(href, base_url)
+
+    # 3. Last resort — first link that isn't a category page
+    for a in all_links:
+        href = a["href"]
+        is_cat = any(re.match(p, href) for p in category_patterns)
+        if not is_cat:
+            return _make_absolute(href, base_url)
+
+    return ""
+
+
+def _make_absolute(href: str, base: str) -> str:
+    if href.startswith("http"):
+        return href
+    return base.rstrip("/") + "/" + href.lstrip("/")
 
 
 def _extract_number(text):
@@ -132,10 +197,8 @@ def scrape_truelancer():
                 if not title or len(title) < 5:
                     continue
 
-                link_el = card.find("a", href=True)
-                link = link_el["href"] if link_el else ""
-                if link and not link.startswith("http"):
-                    link = "https://www.truelancer.com" + link
+                link = _job_link(card, "https://www.truelancer.com",
+                                 prefer_patterns=[r"/post/", r"/project/", r"\d{4,}"])
 
                 desc_el = card.find("p") or card.find(class_=re.compile(r"desc|detail", re.I))
                 desc = desc_el.get_text(strip=True)[:300] if desc_el else ""
@@ -202,10 +265,8 @@ def scrape_internshala():
                 if not title or len(title) < 5:
                     continue
 
-                link_el = card.find("a", href=True)
-                link = link_el["href"] if link_el else ""
-                if link and not link.startswith("http"):
-                    link = "https://internshala.com" + link
+                link = _job_link(card, "https://internshala.com",
+                                 prefer_patterns=[r"/freelancing/detail/", r"/jobs/detail/", r"\d{4,}"])
 
                 budget_el = (
                     card.select_one(".stipend") or
@@ -273,10 +334,8 @@ def scrape_worknhire():
                 if not title or len(title) < 5:
                     continue
 
-                link_el = card.find("a", href=True)
-                link = link_el["href"] if link_el else ""
-                if link and not link.startswith("http"):
-                    link = "https://www.worknhire.com" + link
+                link = _job_link(card, "https://www.worknhire.com",
+                                 prefer_patterns=[r"/project/", r"/job/", r"\d{4,}"])
 
                 budget_el = card.find(class_=re.compile(r"budget|price|amount|pay|bid", re.I))
                 budget = budget_el.get_text(strip=True) if budget_el else "N/A"
@@ -513,10 +572,8 @@ def scrape_peopleperhour():
                 if not title or len(title) < 5:
                     continue
 
-                link_el = card.find("a", href=True)
-                link = link_el["href"] if link_el else ""
-                if link and not link.startswith("http"):
-                    link = "https://www.peopleperhour.com" + link
+                link = _job_link(card, "https://www.peopleperhour.com",
+                                 prefer_patterns=[r"/job/", r"/project/", r"\d{4,}"])
 
                 budget_el = card.find(class_=re.compile(r"budget|price|amount|fee|rate", re.I))
                 budget = budget_el.get_text(strip=True) if budget_el else "N/A"
@@ -572,10 +629,8 @@ def scrape_hubstaff():
                 if not title or len(title) < 5:
                     continue
 
-                link_el = card.find("a", href=True)
-                link = link_el["href"] if link_el else ""
-                if link and not link.startswith("http"):
-                    link = "https://talent.hubstaff.com" + link
+                link = _job_link(card, "https://talent.hubstaff.com",
+                                 prefer_patterns=[r"/jobs/", r"/listing/", r"\d{4,}"])
 
                 budget_el = card.find(class_=re.compile(r"rate|salary|budget|pay|compensation", re.I))
                 budget = budget_el.get_text(strip=True) if budget_el else "N/A"

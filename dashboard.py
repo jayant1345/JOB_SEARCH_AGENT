@@ -162,7 +162,7 @@ with col_f1:
 with col_f2:
     plat_filter = st.multiselect("Portal", ALL_PLATFORMS, default=ALL_PLATFORMS)
 with col_f3:
-    min_score = st.slider("Min AI Score", 0, 10, 6)
+    min_score = st.slider("Min AI Score", 0, 10, 3)
 with col_f4:
     sort_by = st.selectbox("Sort by", ["AI Score ↓", "Newest ↓"])
 

@@ -560,8 +560,16 @@ def scrape_remoteok():
 
 # ── 7. We Work Remotely (RSS Feed) ────────────────────────────
 
-_WWR_KW = ["python", "data", "machine learning", "ai", "nlp", "langchain",
-           "ml", "deep learning", "analytics", "engineer", "scientist"]
+# Strict terms only — broad words like "data","engineer","analytics" cause
+# too many false positives (Design Engineer, Sales Analytics, etc.)
+_WWR_KW = [
+    "python", "machine learning", "langchain", "nlp", "llm", "openai",
+    "data science", "data scientist", "data engineer", "deep learning",
+    "tensorflow", "pytorch", "fastapi", "streamlit", "huggingface",
+    "rag", "ai engineer", "ml engineer", "artificial intelligence",
+    "computer vision", "natural language processing", "etl",
+    "automation engineer", "generative ai", "large language model",
+]
 
 
 def scrape_weworkremotely():

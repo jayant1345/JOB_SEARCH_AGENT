@@ -3,6 +3,9 @@
 # Owner: Kinjal Jayantkumar Jayswal
 # ============================================================
 
+# Anthropic API key — get yours at https://console.anthropic.com/
+ANTHROPIC_API_KEY = ""   # paste your sk-ant-... key here
+
 # Your WhatsApp / Telegram number
 WHATSAPP_NUMBER = "+919157938887"
 TELEGRAM_BOT_TOKEN = ""   # Fill in after creating bot via @BotFather

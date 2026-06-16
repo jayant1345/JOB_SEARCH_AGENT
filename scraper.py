@@ -499,6 +499,15 @@ def scrape_guru():
 
 # ── 6. RemoteOK (Public JSON API) ──────────────────────────────
 
+_REMOTEOK_TECH_TAGS = {
+    "python", "machine-learning", "data-science", "nlp", "ai",
+    "langchain", "deep-learning", "tensorflow", "pytorch", "scikit-learn",
+    "data-engineering", "llm", "openai", "fastapi", "streamlit",
+    "natural-language-processing", "computer-vision", "rag", "huggingface",
+    "automation", "etl", "analytics",
+}
+
+
 def scrape_remoteok():
     # RemoteOK requires a 1-second delay as per their terms
     time.sleep(1)
@@ -511,32 +520,42 @@ def scrape_remoteok():
         if not isinstance(item, dict):
             continue
 
-        tags = [t.lower() for t in item.get("tags", [])]
+        # Normalise tags: lower-case, replace spaces with dashes
+        raw_tags = item.get("tags", []) or []
+        tags_normalised = {t.lower().replace(" ", "-") for t in raw_tags}
         position = item.get("position", "").lower()
-        desc = (item.get("description") or "").lower()
 
-        # Keep only AI/data/Python relevant jobs
-        if not any(kw in tags or kw in position or kw in desc for kw in AI_KEYWORDS):
+        # Must have at least one recognised tech tag OR keyword in title
+        tag_match   = bool(tags_normalised & _REMOTEOK_TECH_TAGS)
+        title_match = any(kw in position for kw in ["python", "data", "ml ", "nlp", "ai ", "langchain", "llm"])
+
+        if not (tag_match or title_match):
             continue
 
         title = item.get("position", "")
         if not title:
             continue
 
+        # Strip HTML from description
+        raw_desc = item.get("description") or ""
+        clean_desc = BeautifulSoup(raw_desc, "lxml").get_text(separator=" ")[:300].strip()
+
         salary_min = item.get("salary_min") or 0
         salary_max = item.get("salary_max") or 0
         budget = f"${salary_min:,}–${salary_max:,}/yr" if salary_min else "N/A"
+
+        matched = sorted(tags_normalised & _REMOTEOK_TECH_TAGS)
 
         jobs.append({
             "id": f"rok_{item.get('id', abs(hash(title)))}",
             "platform": "RemoteOK",
             "title": title,
-            "description": BeautifulSoup(item.get("description") or "", "lxml").get_text()[:300],
+            "description": clean_desc,
             "budget": budget,
             "client_rating": None,
             "link": item.get("url", ""),
             "found_at": datetime.now().isoformat(),
-            "keyword_matched": ", ".join(tags[:3]),
+            "keyword_matched": ", ".join(matched[:4]) if matched else position[:30],
         })
 
     logger.info(f"RemoteOK: {len(jobs)} jobs")

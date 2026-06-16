@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(gittask)",
+      "Skill(gittask:*)",
+      "Skill(jayantpush)",
+      "Skill(jayantpush:*)"
+    ]
+  }
+}

@@ -1,13 +1,14 @@
 """
-scraper.py — Scrape job listings from 8 freelancing platforms.
+scraper.py — Scrape job listings from 10 freelancing platforms.
 
 Indian portals     : Truelancer, Internshala, Worknhire
-International      : Freelancer.com, Guru.com, RemoteOK, PeoplePerHour, Hubstaff Talent
+International      : Freelancer.com, Guru.com (RSS), RemoteOK, Remotive,
+                     We Work Remotely (RSS), Jobicy, PeoplePerHour
 
 Strategies (in order of preference):
-  1. Public JSON API  — Freelancer.com, RemoteOK
-  2. RSS / XML feed   — Guru.com
-  3. HTML scraping    — all others (rotating user-agents)
+  1. Public JSON API  — Freelancer.com, RemoteOK, Remotive, Jobicy
+  2. RSS / XML feed   — Guru.com, We Work Remotely
+  3. HTML scraping    — Truelancer, Internshala, Worknhire, PeoplePerHour
   4. Demo mode        — realistic sample data when internet is unavailable
 """
 
@@ -162,125 +163,130 @@ def _extract_number(text):
 # ═══════════════════════════════════════════════════════════════
 
 # ── 1. Truelancer ───────────────────────────────────────────────
+# Site is Next.js — job data is embedded in __NEXT_DATA__ JSON, not HTML cards.
 
 def scrape_truelancer():
+    import json as _json
     jobs = []
-    search_terms = ["python", "machine-learning", "langchain", "nlp"]
+    seen_ids: set = set()
+    search_terms = ["python", "machine-learning", "langchain", "nlp", "data-science"]
 
     for term in search_terms:
-        urls = [
-            f"https://www.truelancer.com/freelance-{term}-jobs",
-            f"https://www.truelancer.com/freelance-jobs?search={term}",
-        ]
-        html = None
-        for url in urls:
-            html = _safe_get(url)
-            if html:
-                break
+        url  = f"https://www.truelancer.com/freelance-{term}-jobs"
+        html = _safe_get(url, portal="truelancer")
         if not html:
             continue
 
-        soup = BeautifulSoup(html, "lxml")
-        cards = (
-            soup.select(".project-list-item") or
-            soup.select(".job-item") or
-            soup.select("article") or
-            soup.find_all("div", class_=re.compile(r"project|listing", re.I))
+        m = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            html, re.DOTALL
         )
+        if not m:
+            logger.debug(f"Truelancer: no __NEXT_DATA__ on {url}")
+            continue
 
-        for card in cards[:20]:
+        try:
+            page_data = _json.loads(m.group(1))
+            projects  = (
+                page_data.get("props", {})
+                         .get("pageProps", {})
+                         .get("data", {})
+                         .get("projects", {})
+                         .get("data", [])
+            )
+        except Exception as e:
+            logger.debug(f"Truelancer JSON parse: {e}")
+            continue
+
+        for p in projects:
             try:
-                title_el = (
-                    card.find("h2") or card.find("h3") or
-                    card.find("a", class_=re.compile(r"title", re.I))
-                )
-                title = title_el.get_text(strip=True) if title_el else ""
+                title = (p.get("title") or "").strip()
                 if not title or len(title) < 5:
                     continue
 
-                link = _job_link(card, "https://www.truelancer.com",
-                                 prefer_patterns=[r"/post/", r"/project/", r"\d{4,}"])
+                job_id = f"tl_{p.get('id', abs(hash(title)))}"
+                if job_id in seen_ids:
+                    continue
+                seen_ids.add(job_id)
 
-                desc_el = card.find("p") or card.find(class_=re.compile(r"desc|detail", re.I))
-                desc = desc_el.get_text(strip=True)[:300] if desc_el else ""
-
-                budget_el = card.find(class_=re.compile(r"budget|price|amount", re.I))
-                budget = budget_el.get_text(strip=True) if budget_el else "N/A"
-
-                rating_el = card.find(class_=re.compile(r"rating|star", re.I))
-                rating = _extract_number(rating_el.get_text()) if rating_el else None
+                import html as _html
+                desc   = _html.unescape(re.sub(r"<[^>]+>", " ", p.get("description") or ""))[:300].strip()
+                link   = p.get("link") or f"https://www.truelancer.com/freelance-project/{job_id}"
+                budget_val  = p.get("budget")
+                currency    = p.get("currency", "USD")
+                job_type    = p.get("jobTypeName", "")
+                suffix      = "/hr" if "hourly" in job_type.lower() else ""
+                budget = f"{currency} {budget_val}{suffix}" if budget_val else "N/A"
 
                 jobs.append({
-                    "id": f"tl_{hash(link or title)}",
+                    "id": job_id,
                     "platform": "Truelancer",
                     "title": title,
                     "description": desc,
                     "budget": budget,
-                    "client_rating": rating,
+                    "client_rating": None,
                     "link": link,
                     "found_at": datetime.now().isoformat(),
                     "keyword_matched": term,
                 })
             except Exception as e:
-                logger.debug(f"Truelancer card: {e}")
+                logger.debug(f"Truelancer project: {e}")
 
     logger.info(f"Truelancer: {len(jobs)} jobs")
     return jobs
 
 
 # ── 2. Internshala ──────────────────────────────────────────────
+# Jobs page returns 40 cards with .individual_internship; link is in data-href.
+# /freelancing-jobs/ page is nearly empty — use /jobs/ endpoint instead.
 
 def scrape_internshala():
     jobs = []
-    search_terms = ["python", "machine-learning", "data-science", "nlp"]
+    seen_ids: set = set()
+    search_terms = ["python", "machine learning", "data science", "nlp", "ai"]
 
     for term in search_terms:
-        urls = [
-            f"https://internshala.com/freelancing-jobs/keywords-{term}/",
-            f"https://internshala.com/jobs/keywords-{term}/",
-        ]
-        html = None
-        for url in urls:
-            html = _safe_get(url)
-            if html:
-                break
+        url  = f"https://internshala.com/jobs/keywords-{requests.utils.quote(term)}/"
+        html = _safe_get(url, portal="internshala")
         if not html:
             continue
 
-        soup = BeautifulSoup(html, "lxml")
-        cards = (
-            soup.select(".individual_internship") or
-            soup.select(".internship_meta") or
-            soup.select(".job-internship-card") or
-            soup.find_all("div", class_=re.compile(r"internship|job.?card", re.I))
-        )
+        soup  = BeautifulSoup(html, "lxml")
+        cards = soup.select(".individual_internship")
 
-        for card in cards[:15]:
+        for card in cards[:20]:
             try:
                 title_el = (
+                    card.select_one(".job-internship-name") or
                     card.select_one(".profile") or
-                    card.select_one(".job-title") or
                     card.find("h3") or card.find("h2")
                 )
                 title = title_el.get_text(strip=True) if title_el else ""
                 if not title or len(title) < 5:
                     continue
 
-                link = _job_link(card, "https://internshala.com",
-                                 prefer_patterns=[r"/freelancing/detail/", r"/jobs/detail/", r"\d{4,}"])
+                # Internshala puts the link in data-href on the card div
+                data_href = card.get("data-href", "")
+                link = f"https://internshala.com{data_href}" if data_href else ""
 
-                budget_el = (
-                    card.select_one(".stipend") or
-                    card.select_one(".salary") or
-                    card.find(class_=re.compile(r"stipend|salary|pay|remuneration", re.I))
-                )
-                budget = budget_el.get_text(strip=True) if budget_el else "N/A"
+                # Stipend is inside the ic-16-money span row
+                money_row = card.select_one(".ic-16-money")
+                if money_row:
+                    budget = money_row.find_parent().get_text(strip=True) if money_row.find_parent() else "N/A"
+                else:
+                    budget_el = card.find(class_=re.compile(r"stipend|salary|ctc", re.I))
+                    budget = budget_el.get_text(strip=True) if budget_el else "N/A"
 
-                desc_el = card.find("p") or card.find(class_=re.compile(r"desc|detail|about", re.I))
+                desc_el = card.select_one(".about_job") or card.find("p")
                 desc = desc_el.get_text(strip=True)[:300] if desc_el else ""
 
+                job_id = f"is_{card.get('internshipid', abs(hash(link or title)))}"
+                if job_id in seen_ids:
+                    continue
+                seen_ids.add(job_id)
+
                 jobs.append({
-                    "id": f"is_{hash(link or title)}",
+                    "id": job_id,
                     "platform": "Internshala",
                     "title": title,
                     "description": desc,
@@ -478,7 +484,73 @@ def _parse_freelancer_html(html, term):
     return jobs
 
 
-# ── 5. Remotive.com (Free Public API — replaces Guru.com which is 403 blocked) ─
+# ── 5. Guru.com (RSS feed — bypasses 403 that blocks HTML scraping) ────────────
+
+_GURU_KW = [
+    "python", "machine learning", "langchain", "nlp", "llm", "openai",
+    "data science", "data scientist", "data engineer", "deep learning",
+    "tensorflow", "pytorch", "fastapi", "streamlit", "huggingface",
+    "rag", "ai engineer", "ml engineer", "artificial intelligence",
+    "etl", "automation", "generative ai", "computer vision",
+]
+
+_GURU_RSS_URLS = [
+    "https://www.guru.com/d/jobs/skill/python/rss/",
+    "https://www.guru.com/d/jobs/skill/machine-learning/rss/",
+    "https://www.guru.com/d/jobs/skill/data-science/rss/",
+    "https://www.guru.com/d/jobs/skill/nlp/rss/",
+]
+
+
+def scrape_guru():
+    jobs = []
+    seen_ids: set = set()
+
+    for url in _GURU_RSS_URLS:
+        xml_text = _safe_get(url, portal="guru")
+        if not xml_text:
+            continue
+
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as e:
+            logger.debug(f"Guru RSS parse error {url}: {e}")
+            continue
+
+        for item in root.findall(".//item"):
+            title  = (item.findtext("title") or "").strip()
+            link   = (item.findtext("link")  or "").strip()
+            desc   = BeautifulSoup(item.findtext("description") or "", "lxml").get_text()[:300].strip()
+
+            text = (title + " " + desc).lower()
+            if not any(kw in text for kw in _GURU_KW):
+                continue
+
+            job_id = f"guru_{abs(hash(link or title))}"
+            if job_id in seen_ids:
+                continue
+            seen_ids.add(job_id)
+
+            budget_m = re.search(r"\$[\d,]+(?:k)?(?:\s*[-–]\s*\$[\d,]+(?:k)?)?(?:/hr|/mo|/yr)?", desc, re.I)
+            budget   = budget_m.group(0) if budget_m else "N/A"
+
+            jobs.append({
+                "id": job_id,
+                "platform": "Guru.com",
+                "title": title,
+                "description": desc,
+                "budget": budget,
+                "client_rating": None,
+                "link": link,
+                "found_at": datetime.now().isoformat(),
+                "keyword_matched": "rss-filter",
+            })
+
+    logger.info(f"Guru.com: {len(jobs)} jobs")
+    return jobs
+
+
+# ── 6. Remotive.com (Free Public API) ───────────────────────────────────────────
 
 _REMOTIVE_TECH_KW = [
     "python", "machine learning", "data science", "nlp", "langchain",
@@ -654,6 +726,93 @@ def scrape_weworkremotely():
     return jobs
 
 
+# ── 10. PeoplePerHour (HTML scraping) ──────────────────────────
+
+_PPH_KW = [
+    "python", "machine learning", "langchain", "nlp", "llm", "openai",
+    "data science", "data engineer", "deep learning", "tensorflow",
+    "pytorch", "fastapi", "streamlit", "huggingface", "rag",
+    "ai", "ml", "automation", "etl", "generative ai",
+]
+
+_PPH_SEARCH_TERMS = ["python", "machine-learning", "data-science", "nlp", "langchain"]
+
+
+def scrape_peopleperhour():
+    jobs = []
+    seen_ids: set = set()
+
+    for term in _PPH_SEARCH_TERMS:
+        urls = [
+            f"https://www.peopleperhour.com/freelance-{term}-jobs",
+            f"https://www.peopleperhour.com/freelance-jobs?keyword={requests.utils.quote(term)}",
+        ]
+        html = None
+        for url in urls:
+            html = _safe_get(url, portal="pph")
+            if html:
+                break
+        if not html:
+            continue
+
+        soup = BeautifulSoup(html, "lxml")
+        cards = (
+            soup.select(".hourlie-item")          or
+            soup.select(".job-list-item")         or
+            soup.select("[class*='jobItem']")     or
+            soup.find_all("li", class_=re.compile(r"hourlie|job.?item|listing", re.I))
+        )
+
+        for card in cards[:20]:
+            try:
+                title_el = (
+                    card.find("h2") or card.find("h3") or
+                    card.find("a", class_=re.compile(r"title|name|heading", re.I))
+                )
+                title = title_el.get_text(strip=True) if title_el else ""
+                if not title or len(title) < 5:
+                    continue
+
+                text = title.lower()
+                desc_el = card.find("p") or card.find(class_=re.compile(r"desc|detail|summary|about", re.I))
+                desc = desc_el.get_text(strip=True)[:300] if desc_el else ""
+                text += " " + desc.lower()
+
+                if not any(kw in text for kw in _PPH_KW):
+                    continue
+
+                link = _job_link(card, "https://www.peopleperhour.com",
+                                 prefer_patterns=[r"/job/", r"/hourlie/", r"\d{4,}"])
+
+                budget_el = card.find(class_=re.compile(r"budget|price|rate|amount|fee", re.I))
+                budget = budget_el.get_text(strip=True) if budget_el else "N/A"
+
+                rating_el = card.find(class_=re.compile(r"rating|star|score", re.I))
+                rating = _extract_number(rating_el.get_text()) if rating_el else None
+
+                job_id = f"pph_{abs(hash(link or title))}"
+                if job_id in seen_ids:
+                    continue
+                seen_ids.add(job_id)
+
+                jobs.append({
+                    "id": job_id,
+                    "platform": "PeoplePerHour",
+                    "title": title,
+                    "description": desc,
+                    "budget": budget,
+                    "client_rating": rating,
+                    "link": link,
+                    "found_at": datetime.now().isoformat(),
+                    "keyword_matched": term,
+                })
+            except Exception as e:
+                logger.debug(f"PeoplePerHour card: {e}")
+
+    logger.info(f"PeoplePerHour: {len(jobs)} jobs")
+    return jobs
+
+
 # ═══════════════════════════════════════════════════════════════
 #  DEMO MODE
 # ═══════════════════════════════════════════════════════════════
@@ -789,25 +948,26 @@ def scrape_jobicy():
 #  MAIN ENTRY
 # ═══════════════════════════════════════════════════════════════
 
-# JS-rendered sites (React/MUI) — return 0 without Selenium, kept for future upgrade
 INDIAN_SCRAPERS = [
-    ("Truelancer",  scrape_truelancer),
-    ("Internshala", scrape_internshala),
+    ("Truelancer",  scrape_truelancer),   # __NEXT_DATA__ JSON extraction
+    ("Internshala", scrape_internshala),  # HTML cards via .individual_internship
+    # Worknhire excluded — domain DNS failure (site appears defunct as of Jun 2026)
 ]
 
-# API/RSS sources — confirmed working
 INTERNATIONAL_SCRAPERS = [
     ("Freelancer.com",   scrape_freelancer),     # Public REST API + HTML fallback
+    ("Guru.com",         scrape_guru),            # RSS feed — bypasses 403
     ("RemoteOK",         scrape_remoteok),        # Public JSON API
     ("Remotive",         scrape_remotive),        # Free public API
     ("We Work Remotely", scrape_weworkremotely),  # RSS feed
     ("Jobicy",           scrape_jobicy),          # Free public API — no auth
+    ("PeoplePerHour",    scrape_peopleperhour),   # HTML scraping
 ]
 
 
 def scrape_all():
     if DEMO_MODE:
-        logger.info("🎭 DEMO MODE: returning sample jobs from all 8 portals")
+        logger.info("🎭 DEMO MODE: returning sample jobs from all portals")
         return _demo_jobs()
 
     # Reset per-portal request counters for this scan
@@ -816,7 +976,7 @@ def scrape_all():
     all_scrapers = INDIAN_SCRAPERS + INTERNATIONAL_SCRAPERS
     jobs = []
 
-    # Run all 8 scrapers in parallel — cuts total time from ~4 min to ~30-45 s
+    # Run all scrapers in parallel — cuts total time significantly
     logger.info(f"🚀 Scraping {len(all_scrapers)} portals in parallel...")
     with ThreadPoolExecutor(max_workers=len(all_scrapers)) as pool:
         future_to_name = {pool.submit(fn): name for name, fn in all_scrapers}
